@@ -9,7 +9,7 @@ DataBaseMangager &DataBaseMangager::instance()
 bool DataBaseMangager::openDatabase(const QString &path)
 {
     db.setDatabaseName(path);
-    if(!db.isOpen())
+    if(!db.open())
     {
         qDebug() << "无法打开数据库：" << db.lastError().text();
         return false;
