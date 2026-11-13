@@ -2,10 +2,12 @@
 
 #include <QApplication>
 #include <QDebug>
+#include "databasemangager.h"
 #include <QFile>
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    DataBaseMangager ::instance();
     QFile styleFile(":/style/style.qss");
     if(styleFile.open(QFile::ReadOnly))
     {
