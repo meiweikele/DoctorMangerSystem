@@ -1,0 +1,36 @@
+CREATE TABLE DoctorInfo (
+    id TEXT PRIMARY KEY,  -- 编号（字符串类型）
+    name TEXT NOT NULL,   -- 姓名
+    gender TEXT,          -- 性别
+    birthday TEXT,        -- 生日
+    join_date TEXT,       -- 加入时间
+    study_goal TEXT,      -- 学习目标
+    progress TEXT,        -- 当前进度
+    photo BLOB            -- 照片（二进制数据）
+);
+CREATE TABLE schedule (
+    date TEXT,
+    time TEXT,
+    course_name TEXT,
+    PRIMARY KEY (date, time)
+);
+CREATE TABLE  financialRecords (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INT NOT NULL,
+    payment_date DATE NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    payment_type VARCHAR(50) NOT NULL,
+    notes TEXT,
+    FOREIGN KEY (student_id) REFERENCES studentInfo(id)
+);
+CREATE TABLE honorWall (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_data BLOB NOT NULL,
+    description TEXT,
+    added_date DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL
+);

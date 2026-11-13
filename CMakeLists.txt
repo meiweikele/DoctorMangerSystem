@@ -12,6 +12,7 @@ qt_add_executable(DoctorMangerSystem
     mainwindow.ui
     res.qrc
     databasemangager.h databasemangager.cpp
+    doctorinfowidget.h doctorinfowidget.cpp doctorinfowidget.ui
 
 )
 
