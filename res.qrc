@@ -10,5 +10,6 @@
         <file>ico/828.bmp</file>
         <file>ico/dis3.ico</file>
         <file>ico/f14.ico</file>
+        <file>style/style.qss</file>
     </qresource>
 </RCC>
