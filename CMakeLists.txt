@@ -16,6 +16,7 @@ qt_add_executable(DoctorMangerSystem
     databasemangager.h databasemangager.cpp
     doctorinfowidget.h doctorinfowidget.cpp doctorinfowidget.ui
     tableDelegates.h
+    schedulewidget.h schedulewidget.cpp schedulewidget.ui
 
 )
 
