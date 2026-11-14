@@ -19,7 +19,7 @@ public:
 private:
     explicit DataBaseMangager(QObject *parent = nullptr);
     QSqlDatabase db;
-    QString dbPath = "E:\\Qt_Program\\Qt_DoctorMangerSystem\\DoctorMangerSystem\\DoctorMangerSys.db";
+    QString dbPath ="E:/Qt_Program/Qt_DoctorMangerSystem/DoctorMangerSystem/sqlite/DoctorMangerSys.db";
 signals:
 };
 
