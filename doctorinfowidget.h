@@ -8,6 +8,7 @@
 #include <QFormLayout>
 #include <QDialog>
 #include <QByteArray>
+#include <QTableWidgetItem>
 class QGroupBox;   //定义了指针，因此可以不需要用头文件
 namespace Ui {
 class DoctorInfoWidget;
@@ -25,12 +26,13 @@ private slots:
     void on_btnDeleteItem_clicked();
 
     void on_btnDeleteLine_clicked();
-
+    void handleItemChanged(QTableWidgetItem* item);
 private:
     void refreshTable();
     QGroupBox* createFormGroup();
     QGroupBox* createPhotoGroup();
     void handleDialogAccepted(QGroupBox*formGroup, QGroupBox*photoGroup);
+
     QByteArray photoData;
 private:
     Ui::DoctorInfoWidget *ui;

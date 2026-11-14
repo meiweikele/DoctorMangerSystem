@@ -17,7 +17,7 @@ DoctorInfoWidget::DoctorInfoWidget(QWidget *parent)
 {
     ui->setupUi(this);
     ui->tableWidget->verticalHeader()->setDefaultSectionSize(100); //垂直的表头设置为100
-
+    ui->tableWidget->setAlternatingRowColors(true);
     // 性别列代理
     ComboBoxDelegate* genderDelegate = new ComboBoxDelegate(this);
     genderDelegate->setItems(QStringList() << "男" << "女");
@@ -31,6 +31,8 @@ DoctorInfoWidget::DoctorInfoWidget(QWidget *parent)
     ui->tableWidget->setItemDelegateForColumn(4, new DateEditDelegate(this));
     //图片列代理
     ui->tableWidget->setItemDelegateForColumn(7, new ImageDelegate(this));
+    // 连接item修改信号
+    connect(ui->tableWidget, &QTableWidget::itemChanged, this, &DoctorInfoWidget::handleItemChanged);
 
     refreshTable();
 }
@@ -487,3 +489,63 @@ void DoctorInfoWidget::on_btnDeleteLine_clicked()
     refreshTable();
 }
 
+void DoctorInfoWidget::handleItemChanged(QTableWidgetItem* item)
+{
+    //  1. 获取当前修改项信息
+    const int row = item->row();
+    const int col = item->column();
+
+    //  2. 拦截主键的修改
+    // 如果用户尝试修改第 0 列（学号/ID），直接弹出警告并刷新表格恢复原样
+    if (col == 0) {
+        QMessageBox::warning(this, "警告", "学号是主键，不能修改！");
+        refreshTable(); // 重新从数据库拉取数据，覆盖用户的修改
+        return;
+    }
+
+    // 获取该行的原始学号（用作 SQL WHERE 条件），以及当前修改的列对应的数据库字段名
+    const QString originalId = ui->tableWidget->item(row, 0)->text();
+    // 利用列索引在数组中取出对应的列名
+    const QString columnName = QStringList{ "id", "name", "gender", "birthday",
+                                           "join_date", "study_goal", "progress", "photo" }[col];
+
+    // 3. 开启数据库事务
+    QSqlDatabase::database().transaction();
+    try {
+        // 动态构建更新语句：例如 UPDATE DoctorInfo SET name = ? WHERE id = ?
+        QSqlQuery updateQuery;
+        updateQuery.prepare(QString("UPDATE DoctorInfo SET %1 = ? WHERE id = ?").arg(columnName));
+
+        // 4. 绑定参数
+        if (columnName == "photo") {
+            // 如果修改的是照片列，从单元格的 UserRole 中提取二进制图片数据
+            updateQuery.addBindValue(item->data(Qt::UserRole).toByteArray());
+        }
+        else {
+            // 如果是普通文本列，获取单元格文本并去除首尾空格
+            updateQuery.addBindValue(item->text().trimmed());
+        }
+        // 绑定 WHERE 条件中的 ID
+        updateQuery.addBindValue(originalId);
+
+        //  5. 执行与异常处理
+        if (!updateQuery.exec()) {
+            // 如果 SQL 执行失败，抛出 C++ 标准异常
+            throw std::runtime_error("更新失败: " + updateQuery.lastError().text().toStdString());
+        }
+
+        // 如果一切顺利，提交事务（真正写入数据库）
+        QSqlDatabase::database().commit();
+    }
+    catch (const std::exception& e) {
+        //6. 发生异常时的处理
+        // 回滚事务：撤销这次更新操作，保证数据一致性
+        QSqlDatabase::database().rollback();
+
+        // 刷新表格：界面上的修改会被数据库里的旧数据覆盖，恢复原样
+        refreshTable();
+
+        // 弹出具体的错误信息
+        QMessageBox::critical(this, "操作失败", QString::fromUtf8(e.what()));
+    }
+}
