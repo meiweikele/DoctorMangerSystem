@@ -27,6 +27,8 @@ private:
     void addCourse();
     void deleteCourse();
     void handleItemChanged(QTableWidgetItem* item);
+    void showPreviousWeek();
+    void showNextWeek();
     QPair<QDate, QDate> getWeekRange(int year, int week);
     QTableWidget* tableWidget;
     QComboBox* yearComboBox;

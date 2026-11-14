@@ -111,8 +111,8 @@ void ScheduleWidget::setupUI()
     connect(addButton, &QPushButton::clicked, this, &ScheduleWidget::addCourse);
 
     connect(deleteButton, &QPushButton::clicked, this, &ScheduleWidget::deleteCourse);
-    // connect(prevWeekBtn, &QPushButton::clicked, this, &ScheduleWidget::showPreviousWeek);
-    // connect(nextWeekBtn, &QPushButton::clicked, this, &ScheduleWidget::showNextWeek);
+    connect(prevWeekBtn, &QPushButton::clicked, this, &ScheduleWidget::showPreviousWeek);
+    connect(nextWeekBtn, &QPushButton::clicked, this, &ScheduleWidget::showNextWeek);
     connect(tableWidget, &QTableWidget::itemChanged, this, &ScheduleWidget::handleItemChanged);
 
     //  6. 底部按钮布局
@@ -322,44 +322,52 @@ void ScheduleWidget::addCourse()
         loadSchedule(); // 插入成功后，重新加载数据，刷新界面显示
 }
 
+
+// 1. 删除选中课程 (deleteCourse)
 void ScheduleWidget::deleteCourse()
 {
-    // 确认删除操作
+    //  1. 弹出确认对话框
     QMessageBox confirmBox(this);
     confirmBox.setWindowTitle("确认删除");
     confirmBox.setText("确定要删除该记录吗？");
 
-    // 设置按钮为中文
+    // 自定义按钮文字（防止英文 Yes/No 带来不友好的体验）
     QPushButton* yesButton = confirmBox.addButton("确定", QMessageBox::YesRole);
     QPushButton* noButton = confirmBox.addButton("取消", QMessageBox::NoRole);
 
-    // 设置默认按钮
+    // 默认将焦点放在“取消”上，防止用户误按回车直接删除
     confirmBox.setDefaultButton(noButton);
 
-    // 显示对话框并等待用户选择
+    // 模态显示对话框，阻塞等待用户操作
     confirmBox.exec();
 
+    //  2. 用户确认后的删除逻辑
     if (confirmBox.clickedButton() == yesButton) {
+        // 获取当前选中的行（星期几）和列（第几节课）
         int dayIndex = tableWidget->currentRow();
         int timeIndex = tableWidget->currentColumn();
 
+        // 检查是否选中了有效单元格
         if (dayIndex == -1 || timeIndex == -1) {
             QMessageBox::warning(this, "错误", "请先选择一个时间段！");
             return;
         }
 
+        // 检查该单元格是否有数据（是否为空）
         QTableWidgetItem* item = tableWidget->item(dayIndex, timeIndex);
         if (!item || item->text().isEmpty()) {
             QMessageBox::warning(this, "错误", "该时间段没有课程！");
             return;
         }
 
+        // 3. 根据选中的位置计算日期和时间并删除
         int year = yearComboBox->currentData().toInt();
         int week = weekComboBox->currentData().toInt();
         QPair<QDate, QDate> weekRange = getWeekRange(year, week);
-        QDate currentDate = weekRange.first.addDays(dayIndex);
-        QString time = times[timeIndex];
+        QDate currentDate = weekRange.first.addDays(dayIndex); // 换算成具体日期
+        QString time = times[timeIndex]; // 例如 "上午1"
 
+        // 执行 SQL 删除
         QSqlQuery query;
         query.prepare("DELETE FROM schedule WHERE date = ? AND time = ?");
         query.addBindValue(currentDate.toString("yyyy-MM-dd"));
@@ -369,18 +377,21 @@ void ScheduleWidget::deleteCourse()
             QMessageBox::critical(this, "错误", "删除失败：" + query.lastError().text());
         }
         else {
-            loadSchedule();
+            loadSchedule(); // 刷新界面，让表格恢复空白
         }
     }
-
 }
 
+
+// 2. 直接编辑单元格内容时触发 (handleItemChanged)
 void ScheduleWidget::handleItemChanged(QTableWidgetItem *item)
 {
+    // 获取被修改单元格的行和列
     int day = item->row();
     int timeSlot = item->column();
-    QString newCourse = item->text().trimmed();
+    QString newCourse = item->text().trimmed(); // 获取修改后的文本
 
+    // 计算对应的实际日期
     int year = yearComboBox->currentData().toInt();
     int week = weekComboBox->currentData().toInt();
     QPair<QDate, QDate> weekRange = getWeekRange(year, week);
@@ -388,25 +399,76 @@ void ScheduleWidget::handleItemChanged(QTableWidgetItem *item)
     QString time = times[timeSlot];
 
     QSqlQuery query;
+
+    //  判断是删除还是新增/修改
     if (newCourse.isEmpty()) {
-        // 删除课程
+        // 【场景A】：用户把单元格里的字删光了，说明他想删除这门课
         query.prepare("DELETE FROM schedule WHERE date = ? AND time = ?");
         query.addBindValue(date.toString("yyyy-MM-dd"));
         query.addBindValue(time);
     }
     else {
-        // 使用REPLACE语句更新或插入
+        // 【场景B】：用户修改了文字，或者原本为空现在填了字
+        // 使用 SQLite 的 INSERT OR REPLACE 语法（即主键冲突时执行 Update，否则执行 Insert）
+        // 这要求你的表 PRIMARY KEY (date, time) 是存在的
         query.prepare("INSERT OR REPLACE INTO schedule (date, time, course_name) VALUES (?, ?, ?)");
         query.addBindValue(date.toString("yyyy-MM-dd"));
         query.addBindValue(time);
         query.addBindValue(newCourse);
     }
 
+    //执行并容错
     if (!query.exec()) {
         QMessageBox::critical(this, "错误", "操作失败：" + query.lastError().text());
-        loadSchedule(); // 恢复数据
+        loadSchedule(); // 如果数据库操作失败，强制刷新表格，把界面恢复成数据库里的真实状态
     }
+}
 
+// ==========================================================
+// 1. 切换到上一周 (showPreviousWeek)
+// ==========================================================
+void ScheduleWidget::showPreviousWeek()
+{
+    // 获取当前下拉框选中的索引（注意：index 是索引，从 0 开始）
+    int currentWeek = weekComboBox->currentIndex();
+    int currentYear = yearComboBox->currentIndex();
+
+    // 如果当前不是第 1 周（索引大于 0）
+    if (currentWeek > 0) {
+        // 简单粗暴，直接切到上一周
+        weekComboBox->setCurrentIndex(currentWeek - 1);
+    }
+    else {
+        // 如果当前已经是第 1 周，说明要跨年了，跳到上一年的最后一周
+        // 前提是年份下拉框不是第一项（还有更早的年份）
+        if (yearComboBox->currentIndex() > 0) {
+            yearComboBox->setCurrentIndex(currentYear - 1); // 年份减 1
+            // 跳转到上一年最后一周（索引 51 代表第 52 周，因为 addItem 是从 1 到 52）
+            weekComboBox->setCurrentIndex(51);
+        }
+    }
+}
+
+// ==========================================================
+// 2. 切换到下一周 (showNextWeek)
+// ==========================================================
+void ScheduleWidget::showNextWeek()
+{
+    int currentWeek = weekComboBox->currentIndex();
+    int currentYear = yearComboBox->currentIndex();
+
+    // 如果当前不是最后一周（索引小于 51，即不是第 52 周）
+    if (currentWeek < 51) {
+        // 直接切到下一周
+        weekComboBox->setCurrentIndex(currentWeek + 1);
+    }
+    else {
+        // 如果当前是最后一周，说明要跨年了，跳到下一年的第 1 周
+        if (yearComboBox->currentIndex() < yearComboBox->count()-1) {
+            yearComboBox->setCurrentIndex(currentYear + 1); // 年份加 1
+            weekComboBox->setCurrentIndex(0); // 切到第 1 周（索引 0）
+        }
+    }
 }
 
 // 3. 计算周日期范围 (getWeekRange)
