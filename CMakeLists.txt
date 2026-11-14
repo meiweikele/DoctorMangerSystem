@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.19)
 project(DoctorMangerSystem LANGUAGES CXX)
-set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)  #自动处理 UI 文件。
+set(CMAKE_AUTOMOC ON)  #自动处理元对象编译器（MOC）
+set(CMAKE_AUTORCC ON)  #自动处理资源文件
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Sql)
 qt_standard_project_setup()
 

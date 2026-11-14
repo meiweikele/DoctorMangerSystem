@@ -373,3 +373,101 @@ void DoctorInfoWidget::on_btnAdd_clicked()
     }
 }
 
+
+void DoctorInfoWidget::on_btnDeleteItem_clicked()
+{
+    //  1. 获取所有选中的单元格
+    // selectedItems() 会返回所有被选中的单元格（QTableWidgetItem 对象）的列表
+    auto selected = ui->tableWidget->selectedItems();
+
+    // 如果什么都没选，弹出警告并退出
+    if (selected.isEmpty()) {
+        QMessageBox::warning(this, "警告", "请先选择要删除的单元格！");
+        return;
+    }
+
+    // 2. 开启数据库事务
+    // 同样使用事务保证批量更新的原子性：要么全成功，要么全失败
+    QSqlDatabase::database().transaction();
+
+    //  3. 遍历选中的单元格并执行更新
+    foreach(QTableWidgetItem * item, selected) {
+        // 获取当前选中单元格所在的行号和列号
+        int row = item->row();
+        int col = item->column();
+
+        // 获取该行第 0 列（学号/ID）的值，用作 SQL 的 WHERE 条件
+        QString id = ui->tableWidget->item(row, 0)->text();
+
+        // 定义列名数组，用于将表格的列索引映射到数据库的字段名
+        // 注意：这里的顺序必须和表格的列顺序完全一致
+        const QStringList columns = { "id", "name", "gender", "birthday",
+                                     "join_date", "study_goal", "progress", "photo" };
+
+        QSqlQuery query;
+        // 动态拼接 SQL 语句：将对应列的字段设置为空字符串
+        query.prepare(QString("UPDATE DoctorInfo SET %1 = ? WHERE id = ?").arg(columns[col]));
+
+        // 绑定参数：第一个 ? 是空字符串，第二个 ? 是学号
+        query.addBindValue("");
+        query.addBindValue(id);
+
+        // 执行更新
+        if (!query.exec()) {
+            QSqlDatabase::database().rollback(); // 失败则回滚
+            QMessageBox::critical(this, "错误", "更新失败：" + query.lastError().text());
+            return;
+        }
+    }
+
+    // 4. 提交并刷新
+    QSqlDatabase::database().commit(); // 全部成功，提交事务
+    refreshTable();                    // 刷新表格显示
+}
+
+
+void DoctorInfoWidget::on_btnDeleteLine_clicked()
+{
+    // 1. 获取选中的行
+    // 获取表格的选择模型（SelectionModel），并拿到所有被选中的“行”的索引
+    auto selected = ui->tableWidget->selectionModel()->selectedRows(); //删除单行用currentRow，多行用selectedRows()
+
+    // 如果没有任何行被选中，弹出警告并退出
+    if (selected.isEmpty()) {
+        QMessageBox::warning(this, "警告", "请先选择要删除的行！");
+        return;
+    }
+
+    // 2. 开启数据库事务
+    // 开启事务：如果批量删除过程中有一条失败，可以全部回滚（撤销），保证数据一致性
+    QSqlDatabase::database().transaction();
+
+    // 3. 遍历所有选中的行并执行删除
+    // 遍历选中的行索引列表
+    foreach(const QModelIndex & index, selected) {
+        // 从表格的当前行、第 0 列（即 id 列）提取学号文本
+        QString id = ui->tableWidget->item(index.row(), 0)->text();
+
+        // 准备 SQL 删除语句
+        QSqlQuery query;
+        query.prepare("DELETE FROM DoctorInfo WHERE id = ?");
+        query.addBindValue(id); // 绑定学号参数
+
+        // 执行删除操作，如果失败
+        if (!query.exec()) {
+            // 回滚整个事务（撤销之前所有成功删除的行）
+            QSqlDatabase::database().rollback();
+            // 弹出错误提示
+            QMessageBox::critical(this, "错误", "删除失败：" + query.lastError().text());
+            return; // 直接退出，不再继续删除后续行
+        }
+    }
+
+    // 4. 提交事务并刷新界面
+    // 如果所有删除都成功了，提交事务（真正写入数据库）
+    QSqlDatabase::database().commit();
+
+    // 刷新表格，让刚删除的行从界面上消失
+    refreshTable();
+}
+
