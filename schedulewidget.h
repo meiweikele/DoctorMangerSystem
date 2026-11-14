@@ -24,6 +24,7 @@ private:
     void setupUI();
     void loadSchedule();
     void setupTable();
+    void addCourse();
     QPair<QDate, QDate> getWeekRange(int year, int week);
     QTableWidget* tableWidget;
     QComboBox* yearComboBox;
