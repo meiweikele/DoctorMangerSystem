@@ -10,7 +10,7 @@ class QTableWidget;
 class QComboBox;
 class QLabel;
 class QPushButton;
-
+class QTableWidgetItem;
 //采用纯代码绘制，因为大型项目这样会维护起来方便
 class ScheduleWidget : public QWidget
 {
@@ -25,6 +25,8 @@ private:
     void loadSchedule();
     void setupTable();
     void addCourse();
+    void deleteCourse();
+    void handleItemChanged(QTableWidgetItem* item);
     QPair<QDate, QDate> getWeekRange(int year, int week);
     QTableWidget* tableWidget;
     QComboBox* yearComboBox;

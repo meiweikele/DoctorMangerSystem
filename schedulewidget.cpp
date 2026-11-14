@@ -13,6 +13,7 @@
 #include <QFormLayout>
 #include <QTimeEdit>
 #include <QSqlError>
+#include <QTableWidgetItem>
 //自定义周数计算:基于每年的1月1日作为起点，计算从该日期到给定日期的天数，并根据天数计算周数。
 int customWeekNumber(const QDate& date) {
     // 1. 获取当前日期所在年份的 1 月 1 日
@@ -109,10 +110,10 @@ void ScheduleWidget::setupUI()
     // 点击添加按钮时，触发添加课程逻辑
     connect(addButton, &QPushButton::clicked, this, &ScheduleWidget::addCourse);
 
-    // connect(deleteButton, &QPushButton::clicked, this, &ScheduleWidget::deleteCourse);
+    connect(deleteButton, &QPushButton::clicked, this, &ScheduleWidget::deleteCourse);
     // connect(prevWeekBtn, &QPushButton::clicked, this, &ScheduleWidget::showPreviousWeek);
     // connect(nextWeekBtn, &QPushButton::clicked, this, &ScheduleWidget::showNextWeek);
-    // connect(tableWidget, &QTableWidget::itemChanged, this, &ScheduleWidget::handleItemChanged);
+    connect(tableWidget, &QTableWidget::itemChanged, this, &ScheduleWidget::handleItemChanged);
 
     //  6. 底部按钮布局
     QHBoxLayout* buttonLayout = new QHBoxLayout();
@@ -319,6 +320,93 @@ void ScheduleWidget::addCourse()
         QMessageBox::critical(this, "错误", "添加失败：" + query.lastError().text());
     else
         loadSchedule(); // 插入成功后，重新加载数据，刷新界面显示
+}
+
+void ScheduleWidget::deleteCourse()
+{
+    // 确认删除操作
+    QMessageBox confirmBox(this);
+    confirmBox.setWindowTitle("确认删除");
+    confirmBox.setText("确定要删除该记录吗？");
+
+    // 设置按钮为中文
+    QPushButton* yesButton = confirmBox.addButton("确定", QMessageBox::YesRole);
+    QPushButton* noButton = confirmBox.addButton("取消", QMessageBox::NoRole);
+
+    // 设置默认按钮
+    confirmBox.setDefaultButton(noButton);
+
+    // 显示对话框并等待用户选择
+    confirmBox.exec();
+
+    if (confirmBox.clickedButton() == yesButton) {
+        int dayIndex = tableWidget->currentRow();
+        int timeIndex = tableWidget->currentColumn();
+
+        if (dayIndex == -1 || timeIndex == -1) {
+            QMessageBox::warning(this, "错误", "请先选择一个时间段！");
+            return;
+        }
+
+        QTableWidgetItem* item = tableWidget->item(dayIndex, timeIndex);
+        if (!item || item->text().isEmpty()) {
+            QMessageBox::warning(this, "错误", "该时间段没有课程！");
+            return;
+        }
+
+        int year = yearComboBox->currentData().toInt();
+        int week = weekComboBox->currentData().toInt();
+        QPair<QDate, QDate> weekRange = getWeekRange(year, week);
+        QDate currentDate = weekRange.first.addDays(dayIndex);
+        QString time = times[timeIndex];
+
+        QSqlQuery query;
+        query.prepare("DELETE FROM schedule WHERE date = ? AND time = ?");
+        query.addBindValue(currentDate.toString("yyyy-MM-dd"));
+        query.addBindValue(time);
+
+        if (!query.exec()) {
+            QMessageBox::critical(this, "错误", "删除失败：" + query.lastError().text());
+        }
+        else {
+            loadSchedule();
+        }
+    }
+
+}
+
+void ScheduleWidget::handleItemChanged(QTableWidgetItem *item)
+{
+    int day = item->row();
+    int timeSlot = item->column();
+    QString newCourse = item->text().trimmed();
+
+    int year = yearComboBox->currentData().toInt();
+    int week = weekComboBox->currentData().toInt();
+    QPair<QDate, QDate> weekRange = getWeekRange(year, week);
+    QDate date = weekRange.first.addDays(day);
+    QString time = times[timeSlot];
+
+    QSqlQuery query;
+    if (newCourse.isEmpty()) {
+        // 删除课程
+        query.prepare("DELETE FROM schedule WHERE date = ? AND time = ?");
+        query.addBindValue(date.toString("yyyy-MM-dd"));
+        query.addBindValue(time);
+    }
+    else {
+        // 使用REPLACE语句更新或插入
+        query.prepare("INSERT OR REPLACE INTO schedule (date, time, course_name) VALUES (?, ?, ?)");
+        query.addBindValue(date.toString("yyyy-MM-dd"));
+        query.addBindValue(time);
+        query.addBindValue(newCourse);
+    }
+
+    if (!query.exec()) {
+        QMessageBox::critical(this, "错误", "操作失败：" + query.lastError().text());
+        loadSchedule(); // 恢复数据
+    }
+
 }
 
 // 3. 计算周日期范围 (getWeekRange)
