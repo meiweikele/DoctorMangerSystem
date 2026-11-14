@@ -10,12 +10,28 @@
 #include <QBuffer>
 #include <QMessageBox>
 #include <QSqlError>
+#include "tableDelegates.h"
 DoctorInfoWidget::DoctorInfoWidget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::DoctorInfoWidget)
 {
     ui->setupUi(this);
     ui->tableWidget->verticalHeader()->setDefaultSectionSize(100); //垂直的表头设置为100
+
+    // 性别列代理
+    ComboBoxDelegate* genderDelegate = new ComboBoxDelegate(this);
+    genderDelegate->setItems(QStringList() << "男" << "女");
+    ui->tableWidget->setItemDelegateForColumn(2, genderDelegate);
+    // 进度列代理
+    ComboBoxDelegate* progressDelegate = new ComboBoxDelegate(this);
+    progressDelegate->setItems(QStringList() << "0%" << "20%" << "40%" << "60%" << "80%" << "100%");
+    ui->tableWidget->setItemDelegateForColumn(6, progressDelegate);
+    // 日期列代理
+    ui->tableWidget->setItemDelegateForColumn(3, new DateEditDelegate(this));
+    ui->tableWidget->setItemDelegateForColumn(4, new DateEditDelegate(this));
+    //图片列代理
+    ui->tableWidget->setItemDelegateForColumn(7, new ImageDelegate(this));
+
     refreshTable();
 }
 
