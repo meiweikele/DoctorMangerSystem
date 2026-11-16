@@ -19,6 +19,7 @@
 #include <QLineSeries>
 #include <QDateTimeAxis>
 #include <QValueAxis>
+#include <QMessageBox>
 FinancialWidget::FinancialWidget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::FinancialWidget)
@@ -103,8 +104,8 @@ void FinancialWidget::setupUI()
     //  5. 信号与槽连接
     // 按钮点击事件
     connect(addButton, &QPushButton::clicked, this, &FinancialWidget::addRecord);
-    //connect(deleteButton, &QPushButton::clicked, this, &FinancialWidget::deleteRecord);
-    // connect(editButton, &QPushButton::clicked, this, &FinancialWidget::editRecord);
+    connect(deleteButton, &QPushButton::clicked, this, &FinancialWidget::deleteRecord);
+    connect(editButton, &QPushButton::clicked, this, &FinancialWidget::editRecord);
 
     // 筛选条件改变时，自动重新加载数据
     // 使用 QOverload 消除 currentIndexChanged 的重载歧义
@@ -396,6 +397,139 @@ void FinancialWidget::addRecord()
         else qDebug() << "添加记录失败：" << query.lastError().text();
     }
 }
+
+void FinancialWidget::editRecord()
+{
+    // ================== 1. 检查是否选中了记录 ==================
+    int currentRow = tableWidget->currentRow();
+    if (currentRow < 0) {
+        QMessageBox::warning(this, "警告", "请选择要修改的记录！");
+        return;
+    }
+
+    // ================== 2. 获取当前行的数据 ==================
+    // 注意：第 0 列是隐藏的主键 ID
+    QString id = tableWidget->item(currentRow, 0)->text();          // 主键 ID
+    QString doctorName = tableWidget->item(currentRow, 1)->text();  // 医生姓名
+    QString paymentDate = tableWidget->item(currentRow, 2)->text(); // 缴费日期
+    QString amount = tableWidget->item(currentRow, 3)->text();      // 金额
+    QString feeType = tableWidget->item(currentRow, 4)->text();     // 支付类型
+    QString remark = tableWidget->item(currentRow, 5)->text();      // 备注
+
+    // ================== 3. 创建编辑对话框 ==================
+    QDialog dialog(this);
+    dialog.setWindowTitle("修改缴费记录");
+    QFormLayout form(&dialog);
+
+    // ================== 4. 医生下拉框初始化 ==================
+    QComboBox* doctorNameComboBox = new QComboBox(&dialog);
+    QSqlQuery query("SELECT id, name FROM DoctorInfo");
+    while (query.next()) {
+        QString id = query.value(0).toString(); // 注意：这里把外层的 id 覆盖了（变量遮蔽）
+        QString name = query.value(1).toString();
+        doctorNameComboBox->addItem(name, QVariant(id));
+    }
+    // 尝试将下拉框设置为当前行显示的医生名字（如果表里有这个名字的话）
+    doctorNameComboBox->setCurrentText(doctorName);
+
+    // ================== 5. 其余编辑框初始化 ==================
+    QLineEdit* paymentDateEdit = new QLineEdit(paymentDate, &dialog);
+    QLineEdit* amountEdit = new QLineEdit(amount, &dialog);
+    QLineEdit* feeTypeEdit = new QLineEdit(feeType, &dialog);
+    QLineEdit* remarkEdit = new QLineEdit(remark, &dialog);
+
+    // 添加到表单布局
+    form.addRow("医生名称:", doctorNameComboBox);
+    form.addRow("缴费日期:", paymentDateEdit);
+    form.addRow("金额:", amountEdit);
+    form.addRow("支付类型:", feeTypeEdit);
+    form.addRow("备注:", remarkEdit);
+
+    // ================== 6. 确定/取消按钮 ==================
+    QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, &dialog);
+    buttonBox.button(QDialogButtonBox::Ok)->setText("确定");
+    buttonBox.button(QDialogButtonBox::Cancel)->setText("取消");
+    form.addRow(&buttonBox);
+    QObject::connect(&buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(&buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    // ================== 7. 用户确认后的更新逻辑 ==================
+    if (dialog.exec() == QDialog::Accepted) {
+        // 获取对话框中的最新数据
+        QString doctorId = doctorNameComboBox->currentData().toString();
+        QString paymentDate = paymentDateEdit->text();
+        double amount = amountEdit->text().toDouble();
+        QString feeType = feeTypeEdit->text();
+        QString remark = remarkEdit->text();
+
+        // 执行 SQL 更新
+        QSqlQuery query;
+        query.prepare("UPDATE financialRecords SET doctor_id = :doctor_id, payment_date = :payment_date, "
+                      "amount = :amount, payment_type = :payment_type, notes = :notes WHERE id = :id");
+        query.bindValue(":doctor_id", doctorId);
+        query.bindValue(":payment_date", paymentDate);
+        query.bindValue(":amount", amount);
+        query.bindValue(":payment_type", feeType);
+        query.bindValue(":notes", remark);
+        query.bindValue(":id", id);
+
+        if (query.exec()) {
+            qDebug() << "记录修改成功！";
+            loadFinancialRecords(); // 刷新表格（同时会更新图表）
+        }
+        else {
+            qDebug() << "修改记录失败：" << query.lastError().text();
+        }
+    }
+}
+
+void FinancialWidget::deleteRecord()
+{
+    // ================== 1. 检查是否选中了表格行 ==================
+    int currentRow = tableWidget->currentRow();
+    if (currentRow < 0) {
+        QMessageBox::warning(this, "警告", "请选择要删除的记录！");
+        return;
+    }
+
+    // ================== 2. 获取要删除记录的主键 ID ==================
+    // 第 0 列存的是主键 ID（虽然是数字，但存在表格文本中，需要转换）
+    int id = tableWidget->item(currentRow, 0)->text().toInt();
+
+    // ================== 3. 弹出确认对话框（防误删） ==================
+    QMessageBox confirmBox(this);
+    confirmBox.setWindowTitle("确认删除");
+    confirmBox.setText("确定要删除该记录吗？");
+
+    // 自定义中文按钮
+    QPushButton* yesButton = confirmBox.addButton("确定", QMessageBox::YesRole);
+    QPushButton* noButton = confirmBox.addButton("取消", QMessageBox::NoRole);
+
+    // 将默认焦点放在“取消”上，防止用户狂按回车直接删除
+    confirmBox.setDefaultButton(noButton);
+
+    // 显示对话框并阻塞等待用户点击
+    confirmBox.exec();
+
+    // ================== 4. 用户确认后执行删除 ==================
+    if (confirmBox.clickedButton() == yesButton) {
+        QSqlQuery query;
+        // 使用命名占位符 :id，防止 SQL 注入，比字符串拼接安全得多
+        query.prepare("DELETE FROM financialRecords WHERE id = :id");
+        query.bindValue(":id", id);
+
+        if (query.exec()) {
+            qDebug() << "记录删除成功！";
+            loadFinancialRecords(); // 刷新表格和图表
+        }
+        else {
+            // 💡 建议：这里最好把具体的错误信息也打印出来，方便排查
+            QMessageBox::warning(this, "错误", "删除记录失败：" + query.lastError().text());
+        }
+    }
+}
+
+
 
 
 

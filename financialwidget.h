@@ -25,6 +25,8 @@ private:
     void updatePieChart();  // 更新右侧饼图
     void populateDoctorComboBox();
     void addRecord();
+    void editRecord();
+    void deleteRecord();
     QChartView* pieChartView;
     QTableWidget* tableWidget;
     QComboBox* DoctorComboBox;
