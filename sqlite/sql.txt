@@ -16,12 +16,12 @@ CREATE TABLE schedule (
 );
 CREATE TABLE  financialRecords (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id INT NOT NULL,
+    doctor_id INT NOT NULL,
     payment_date DATE NOT NULL,
     amount DECIMAL(10,2) NOT NULL,
     payment_type VARCHAR(50) NOT NULL,
     notes TEXT,
-    FOREIGN KEY (student_id) REFERENCES studentInfo(id)
+    FOREIGN KEY (doctor_id) REFERENCES DoctorInfo(id)
 );
 CREATE TABLE honorWall (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -20,9 +20,14 @@ public:
     ~FinancialWidget();
 private:
     void setupUI();
+    void loadFinancialRecords();
+    void updateChart();      // 更新下方折线图
+    void updatePieChart();  // 更新右侧饼图
+    void populateDoctorComboBox();
+    void addRecord();
     QChartView* pieChartView;
     QTableWidget* tableWidget;
-    QComboBox* studentComboBox;
+    QComboBox* DoctorComboBox;
     QPushButton* addButton;
     QPushButton* deleteButton;
     QPushButton* editButton;
