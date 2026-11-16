@@ -15,6 +15,10 @@
 #include <QDialogButtonBox>
 #include <QSqlError>
 #include <QLineEdit>
+#include <QPieSeries>
+#include <QLineSeries>
+#include <QDateTimeAxis>
+#include <QValueAxis>
 FinancialWidget::FinancialWidget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::FinancialWidget)
@@ -99,7 +103,7 @@ void FinancialWidget::setupUI()
     //  5. 信号与槽连接
     // 按钮点击事件
     connect(addButton, &QPushButton::clicked, this, &FinancialWidget::addRecord);
-    // connect(deleteButton, &QPushButton::clicked, this, &FinancialWidget::deleteRecord);
+    //connect(deleteButton, &QPushButton::clicked, this, &FinancialWidget::deleteRecord);
     // connect(editButton, &QPushButton::clicked, this, &FinancialWidget::editRecord);
 
     // 筛选条件改变时，自动重新加载数据
@@ -129,11 +133,11 @@ void FinancialWidget::loadFinancialRecords()
     QString queryStr = QString(
                            "SELECT fr.id, s.name, fr.payment_date, fr.amount, fr.payment_type, fr.notes "
                            "FROM financialRecords fr "
-                           "JOIN DoctorInfo s ON fr.Doctor_id = s.id " // 连接医生表获取医生姓名
+                           "JOIN DoctorInfo s ON fr.doctor_id = s.id "
                            "WHERE fr.payment_date BETWEEN '%1' AND '%2' %3"
                            ).arg(startDate.toString("yyyy-MM-dd"),
                                 endDate.toString("yyyy-MM-dd"),
-                                (DoctorId != "-1") ? QString("AND fr._id = '%1'").arg(DoctorId) : "");
+                                (DoctorId != "-1") ? QString("AND fr.doctor_id = '%1'").arg(DoctorId) : "");
 
     //  4. 执行查询并填充表格
     QSqlQuery query(queryStr);
@@ -161,14 +165,155 @@ void FinancialWidget::loadFinancialRecords()
 
 void FinancialWidget::updateChart()
 {
+    // ================== 1. 获取并验证日期范围 ==================
+    QDate startDate = startDateEdit->date();
+    QDate endDate = endDateEdit->date();
+    // 如果用户把起始日期设得比结束日期还晚，代码会强行交换这两个日期，并重新设置回 UI
+    if (startDate > endDate) {
+        std::swap(startDate, endDate);
+        startDateEdit->setDate(startDate);
+        endDateEdit->setDate(endDate);
+    }
 
+    // ================== 2. 构建安全SQL查询 ==================
+    QString DoctorId = DoctorComboBox->currentData().toString();
+    // 动态拼接 SQL 过滤条件
+    QString queryStr = QString("SELECT DATE(payment_date) AS day, SUM(amount) AS total "
+                               "FROM financialRecords "
+                               "WHERE payment_date BETWEEN :startDate AND :endDate "
+                               "%1 GROUP BY day ORDER BY day"
+                               ).arg(DoctorId != "-1" ? "AND doctor_id = :doctorId" : "");
+
+    QSqlQuery query;
+    query.prepare(queryStr);
+    query.bindValue(":startDate", startDate.toString("yyyy-MM-dd"));
+    query.bindValue(":endDate", endDate.toString("yyyy-MM-dd"));
+
+    if (DoctorId != "-1") query.bindValue(":doctorId", DoctorId);
+
+    if (!query.exec()) qCritical() << "[SQL错误]" << query.lastError().text();
+
+    // ================== 3. 处理查询数据 ==================
+    // 用 QMap 存储每个日期的总金额，同时计算最大金额以便后续设置 Y 轴
+    QMap<QDate, qreal> dayData;
+    qreal maxAmount = 0;
+    while (query.next()) {
+        QDate day = QDate::fromString(query.value(0).toString(), "yyyy-MM-dd");
+        if (!day.isValid()) continue;
+        qreal amount = query.value(1).toDouble();
+        dayData[day] = amount;
+        if (amount > maxAmount) maxAmount = amount;
+    }
+
+    // ================== 4. 创建图表系列 ==================
+    QLineSeries* series = new QLineSeries();
+    series->setName("销售额");
+    QPen pen(Qt::blue);
+    series->setPen(pen);
+
+    // 遍历从起始日期到结束日期的每一天，如果没有数据，就用 0 填补
+    QDate currentDate = startDate;
+    while (currentDate <= endDate) {
+        qreal value = dayData.value(currentDate, 0.0);
+        // QLineSeries 的 X 轴需要毫秒时间戳
+        series->append(currentDate.startOfDay().toMSecsSinceEpoch(), value);
+        currentDate = currentDate.addDays(1);
+    }
+
+    // ================== 5. 配置坐标轴 ==================
+    QChart* chart = new QChart();
+    chart->addSeries(series);
+
+    // X 轴：时间轴
+    QDateTimeAxis* axisX = new QDateTimeAxis();
+    axisX->setFormat("yyyy-MM-dd");
+    axisX->setTitleText("日期");
+    axisX->setRange(startDate.startOfDay(), endDate.startOfDay());
+    chart->addAxis(axisX, Qt::AlignBottom);
+    series->attachAxis(axisX);
+
+    // Y 轴：数值轴
+    QValueAxis* axisY = new QValueAxis();
+    axisY->setTitleText("金额 (元)");
+    axisY->setLabelFormat("%.0f");
+
+    // 如果不设置 axisY->setRange(0, maxAmount * 1.2)，折线可能会贴在图表的顶部边缘，很难看。
+    chart->addAxis(axisY, Qt::AlignLeft);
+    series->attachAxis(axisY);
+
+    // ================== 6. 应用图表 ==================
+    // 清理旧图表，防止内存泄漏
+    if (chartView->chart()) delete chartView->chart();
+    chartView->setChart(chart);
+    chartView->setRenderHint(QPainter::Antialiasing);
+    chart->legend()->setVisible(false);
 }
 
 void FinancialWidget::updatePieChart()
 {
+    // ================== 1. 获取筛选条件 ==================
+    QString DoctorId = DoctorComboBox->currentData().toString();
+    QDate startDate = startDateEdit->date();
+    QDate endDate = endDateEdit->date();
 
+    // ================== 2. 拼接 SQL 聚合查询 ==================
+    // 根据支付类型(payment_type)分组，并求和(SUM)
+    // 同样使用了 %3 占位符，如果选了具体医生，就追加 WHERE 过滤条件
+    QString queryStr = QString(
+                           "SELECT payment_type, SUM(amount) "
+                           "FROM financialRecords "
+                           "WHERE payment_date BETWEEN '%1' AND '%2' %3 "
+                           "GROUP BY payment_type")
+                           .arg(startDate.toString("yyyy-MM-dd"))
+                           .arg(endDate.toString("yyyy-MM-dd"))
+                           .arg(DoctorId != "-1" ? QString("AND doctor_id = '%1'").arg(DoctorId) : "");
+
+    QSqlQuery query(queryStr);
+    QPieSeries* series = new QPieSeries(); // 创建饼图的数据系列容器
+
+    // ================== 3. 遍历查询结果，生成饼图数据 ==================
+    while (query.next()) {
+        QString type = query.value(0).toString();  // 支付类型（如：现金、转账）
+        qreal value = query.value(1).toDouble();   // 该类型对应的总金额
+
+        // 如果金额大于 0，才添加到饼图中
+        if (value > 0) {
+            // 设置图例显示的文本：如 "现金1000元"
+            QString legendLabel = QString("%1%2元").arg(type).arg(value);
+            QPieSlice* slice = new QPieSlice(legendLabel, value); // 创建饼图的一个扇形
+            slice->setLabelVisible(false); // 不在扇形上显示标签（防止杂乱），标签统一在图例中显示
+            series->append(slice);         // 将扇形添加到系列中
+        }
+    }
+
+    // ================== 4. 配置 QChart 图表属性 ==================
+    QChart* chart = new QChart();
+    chart->addSeries(series);
+    chart->setTitle("支付类型分布");
+
+    // 设置图例（Legend）
+    chart->legend()->setVisible(true);
+    chart->legend()->setAlignment(Qt::AlignBottom); // 图例放到底部
+    chart->legend()->setBackgroundVisible(true);
+    chart->legend()->setBrush(QBrush(Qt::white));   // 图例背景为白色
+    chart->legend()->setLabelColor(Qt::black);      // 图例文字颜色为黑色
+    chart->legend()->setContentsMargins(10, 10, 10, 10); // 图例边距
+
+    // 设置饼图大小：0.75 代表饼图占整个图表区域的 75%
+    series->setPieSize(0.75);
+
+    // ================== 5. 更新到 QChartView 视图 ==================
+    // 关键点：QChartView 内部会接管传入的 chart 对象的所有权
+    // 所以如果之前已经有 chart 对象，必须先 delete 掉，否则会发生内存泄漏
+    if (pieChartView->chart()) {
+        delete pieChartView->chart();
+    }
+    pieChartView->setChart(chart);
+
+    // 强制重绘界面，确保饼图立即刷新显示
+    pieChartView->repaint();
 }
-//这块有点问题，界面不刷新
+
 void FinancialWidget::populateDoctorComboBox()
 {
     //  1. 清空旧数据
@@ -251,5 +396,7 @@ void FinancialWidget::addRecord()
         else qDebug() << "添加记录失败：" << query.lastError().text();
     }
 }
+
+
 
 
