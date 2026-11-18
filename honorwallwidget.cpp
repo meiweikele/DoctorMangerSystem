@@ -34,12 +34,55 @@ void HonorWallWidget::addImage()
 
 void HonorWallWidget::modifyImage()
 {
+    // ================== 1. 检查是否选中了图片 ==================
+    if (!selectedLabel) {
+        QMessageBox::warning(this, "错误", "请先选择一张图片！");
+        return;
+    }
 
-}
+    // ================== 2. 弹出文件选择对话框 ==================
+    QString imagePath = QFileDialog::getOpenFileName(
+        this, "选择图片", "", "图片文件 (*.png *.jpg *.jpeg *.bmp)"
+        );
+    // 如果用户点了取消，直接退出
+    if (imagePath.isEmpty()) return;
 
-void HonorWallWidget::deleteImage()
-{
+    // ================== 3. 加载新图片 ==================
+    QPixmap pixmap(imagePath);
+    if (pixmap.isNull()) {
+        QMessageBox::warning(this, "错误", "无法加载图片！");
+        return;
+    }
 
+    // ================== 4. 将新图片转为二进制数据 ==================
+    QByteArray imageData;
+    QBuffer buffer(&imageData);
+    buffer.open(QIODevice::WriteOnly);
+    pixmap.save(&buffer, "PNG"); // 统一转成 PNG 二进制流，便于存入数据库
+
+    // ================== 5. 获取选中图片的数据库 ID ==================
+    // 这里能拿到 id，全靠之前 loadImagesFromDatabase 里 setProperty("id", id) 的功劳
+    int id = selectedLabel->property("id").toInt();
+
+    // ================== 6. 更新数据库 ==================
+    QSqlQuery query;
+    query.prepare("UPDATE honorWall SET image_data = :image_data WHERE id = :id");
+    query.bindValue(":image_data", imageData);
+    query.bindValue(":id", id);
+
+    if (!query.exec()) {
+        qWarning() << "更新数据失败：" << query.lastError().text();
+        QMessageBox::warning(this, "错误", "修改图片失败：" + query.lastError().text());
+        return;
+    }
+
+    // ================== 7. 更新界面上的图片 ==================
+    // 直接在当前选中的 label 上替换 pixmap 即可，不需要重建整个网格
+    QPixmap scaledPixmap = pixmap.scaled(imgW, imgH, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    selectedLabel->setPixmap(scaledPixmap);
+
+    // 💡 建议补充：修改成功后，弹出一个提示，或者将 selectedLabel 置空
+     QMessageBox::information(this, "成功", "图片已成功替换！");
 }
 
 void HonorWallWidget::setupUI()
@@ -220,7 +263,63 @@ void HonorWallWidget::addImageToUI(const QPixmap& pixmap)
 
 void HonorWallWidget::onImageClicked()
 {
+    if (selectedLabel) {// 取消之前选中的图片样式
+        selectedLabel->setStyleSheet("border: 1px solid #ccc; padding: 5px;");
+    }
+    selectedLabel = qobject_cast<ClickableLabel*>(sender());
+    if (selectedLabel) {// 更新选中的图片
+        selectedLabel->setStyleSheet("border: 2px solid red; padding: 5px;");
+    }
+}
 
+void HonorWallWidget::deleteImage()
+{
+    // ================== 1. 检查是否选中了图片 ==================
+    if (!selectedLabel) {
+        QMessageBox::warning(this, "错误", "请先选择一张图片！");
+        return;
+    }
+
+    // ================== 2. 弹出确认对话框 ==================
+    if (QMessageBox::question(this, "确认删除", "确定要删除这张图片吗？") != QMessageBox::Yes) return;
+
+    // ================== 3. 获取图片对应的数据库 ID ==================
+    // 这里的 property("id") 之所以能拿到值，是因为我们在 loadImagesFromDatabase 里正确绑定了它
+    int id = selectedLabel->property("id").toInt();
+
+    // ================== 4. 从数据库删除记录 ==================
+    QSqlQuery query;
+    query.prepare("DELETE FROM honorWall WHERE id = :id");
+    query.bindValue(":id", id);
+
+    if (!query.exec()) {
+        qWarning() << "删除数据失败：" << query.lastError().text();
+        return;
+    }
+
+    // ================== 5. 从界面删除图片控件 ==================
+    gridLayout->removeWidget(selectedLabel); // 先从布局中摘除
+    delete selectedLabel;                    // 再彻底销毁控件（释放内存）
+    selectedLabel = nullptr;                 // 防止野指针（非常规范的做法！）
+
+    // ================== 6. 重新排列剩余图片 ==================
+    reorderImages();
+}
+
+void HonorWallWidget::reorderImages()
+{
+    // ================== 1. 清空布局中的所有内容 ==================
+    QLayoutItem* item;
+    while ((item = gridLayout->takeAt(0)) != nullptr) {
+        if (QWidget* widget = item->widget()) {
+            widget->deleteLater(); // 安全地销毁真正的图片控件
+        }
+        delete item;
+    }
+
+    // ================== 2. 重新加载图片 ==================
+    // 从数据库重新拉取全部数据，重新填充到网格布局中
+    loadImagesFromDatabase();
 }
 
 
