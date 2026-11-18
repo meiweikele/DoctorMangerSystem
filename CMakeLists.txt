@@ -20,6 +20,7 @@ qt_add_executable(DoctorMangerSystem
     financialwidget.h financialwidget.cpp financialwidget.ui
     honorwallwidget.h honorwallwidget.cpp honorwallwidget.ui
     settings.h settings.cpp
+    logindialog.h logindialog.cpp logindialog.ui
 
 )
 

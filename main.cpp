@@ -4,6 +4,7 @@
 #include <QDebug>
 #include "databasemangager.h"
 #include <QFile>
+#include "logindialog.h"
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
@@ -20,10 +21,13 @@ int main(int argc, char *argv[])
         qWarning() << "failed to load styleSheet：" << styleFile.errorString();
     }
 
-    MainWindow w;
-    w.show();
+    loginDialog loginDlg;
+    if(loginDlg.exec() == QDialog::Accepted){
+        MainWindow w;
+        w.show();
+        return QApplication::exec();
+    }
 
-    // 加这一句，测试文件是否存在
-    qDebug() << "文件是否存在:" << QFile::exists(":/ico/416.bmp");
-    return QApplication::exec();
+    return 0;
+
 }
