@@ -21,6 +21,7 @@ qt_add_executable(DoctorMangerSystem
     honorwallwidget.h honorwallwidget.cpp honorwallwidget.ui
     settings.h settings.cpp
     logindialog.h logindialog.cpp logindialog.ui
+    systemsettingwidget.h systemsettingwidget.cpp systemsettingwidget.ui
 
 )
 

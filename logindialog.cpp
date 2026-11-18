@@ -9,6 +9,7 @@
 #include <QCryptographicHash>
 #include <QMessageBox>
 #include "settings.h"
+#include "settings.h"
 loginDialog::loginDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::loginDialog)
@@ -42,11 +43,13 @@ loginDialog::loginDialog(QWidget *parent)
     connect(cancelButton, &QPushButton::clicked, this, &loginDialog::reject);
     // 尝试加载缓存的登录信息
     QString cachedUsername, cachedPassword;
-    if (loadCredentials(cachedUsername, cachedPassword)) {
-        usernameLineEdit->setText(cachedUsername);
-        passwordLineEdit->setText(cachedPassword);
+    if(Settings::instance().getCacheEnabled())
+    {
+        if (loadCredentials(cachedUsername, cachedPassword)) {
+            usernameLineEdit->setText(cachedUsername);
+            passwordLineEdit->setText(cachedPassword);
+        }
     }
-
 }
 
 loginDialog::~loginDialog()

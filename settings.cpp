@@ -9,7 +9,7 @@ Settings::Settings(): settings("config.ini", QSettings::IniFormat)
 }
 QString Settings::getDatabasePath() const
 {
-    return settings.value("Database/Path", "users.db").toString();
+    return settings.value("Database/Path", "E:/Qt_Program/Qt_DoctorMangerSystem/DoctorMangerSystem/sqlite/DoctorMangerSys.db").toString();
 }
 void Settings::setDatabasePath(const QString& path)
 {
