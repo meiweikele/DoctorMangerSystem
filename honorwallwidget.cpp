@@ -6,6 +6,10 @@
 #include <QWidget>
 #include <QGridLayout>
 #include <QSqlQuery>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QBuffer>
+#include <QSqlError>
 HonorWallWidget::HonorWallWidget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::HonorWallWidget)
@@ -22,6 +26,9 @@ HonorWallWidget::~HonorWallWidget()
 
 void HonorWallWidget::addImage()
 {
+    // 打开文件对话框选择图片
+    QString imagePath = QFileDialog::getOpenFileName(this, "选择图片", "", "图片文件 (*.png *.jpg *.jpeg *.bmp)");
+    if (!imagePath.isEmpty()) addImageToWall(imagePath);
 
 }
 
@@ -74,16 +81,22 @@ void HonorWallWidget::loadImagesFromDatabase()
     // ================== 1. 清理旧布局项 ==================
     QLayoutItem* item;
     // 循环从网格布局中取出（takeAt）所有的子项，直到取空
+    // while ((item = gridLayout->takeAt(0)) != nullptr) {
+    //     // ⚠️ 隐藏坑 1：这里只是删除了 QLayoutItem 包装器
+    //     // 真正的控件（ClickableLabel）并没有被 delete，它们仍然挂在 contentWidget 上！
+    //     // 如果多次调用此函数，会堆积大量的隐藏控件，造成内存泄漏。
+    //     delete item;
+    // }
+
     while ((item = gridLayout->takeAt(0)) != nullptr) {
-        // ⚠️ 隐藏坑 1：这里只是删除了 QLayoutItem 包装器
-        // 真正的控件（ClickableLabel）并没有被 delete，它们仍然挂在 contentWidget 上！
-        // 如果多次调用此函数，会堆积大量的隐藏控件，造成内存泄漏。
+        if (QWidget* widget = item->widget()) {
+            widget->deleteLater(); // 安全地销毁真正的图片控件
+        }
         delete item;
     }
 
     // ================== 2. 从数据库查询图片数据 ==================
-    // 注意表名是 honor_wall，对应你之前的建表语句是 honorWall
-    QSqlQuery query("SELECT id, image_data FROM honor_wall");
+    QSqlQuery query("SELECT id, image_data FROM honorWall");
 
     while (query.next()) {
         int id = query.value(0).toInt();
@@ -111,7 +124,7 @@ void HonorWallWidget::loadImagesFromDatabase()
             imageLabel->setProperty("id", id);
 
 
-            // connect(imageLabel, &ClickableLabel::clicked, this, &HonorWallWidget::onImageClicked);
+            connect(imageLabel, &ClickableLabel::clicked, this, &HonorWallWidget::onImageClicked);
 
             // ================== 5. 计算行列并加入网格布局 ==================
             // 根据当前布局中已有控件的数量，动态计算应该放在第几行、第几列（每行固定 3 张）
@@ -126,4 +139,88 @@ void HonorWallWidget::loadImagesFromDatabase()
         }
     }
 }
+
+// ==========================================================
+// 1. 将本地图片存入数据库 (addImageToWall)
+// ==========================================================
+void HonorWallWidget::addImageToWall(const QString &imagePath)
+{
+    // ================== 1. 加载本地图片文件 ==================
+    QPixmap pixmap(imagePath);
+    if (pixmap.isNull()) {
+        QMessageBox::warning(this, "错误", "无法加载图片！");
+        return;
+    }
+
+    // ================== 2. 将图片转为二进制 (BLOB) ==================
+    QByteArray imageData;
+    QBuffer buffer(&imageData);
+    buffer.open(QIODevice::WriteOnly);
+    pixmap.save(&buffer, "PNG"); // 以 PNG 格式写入缓冲区
+
+    // ================== 3. 插入数据库 ==================
+    QSqlQuery query;
+    // 注意：表格名是 honorWall（注意大小写）
+    query.prepare("INSERT INTO honorWall (image_data, description, added_date) VALUES(:image_data, :description, :added_date)");
+    query.bindValue(":image_data", imageData);
+    query.bindValue(":description", "未填写描述");
+    query.bindValue(":added_date", QDate::currentDate().toString());
+
+    if (!query.exec()) {
+        qWarning() << "插入数据失败：" << query.lastError().text();
+        return;
+    }
+
+    // ================== 4. 更新界面 ==================
+    // ⚠️ 逻辑 Bug 1：这里是直接调用了 addImageToUI 往最后面追加。
+    // 如果你此时刚好由于某次查询，界面上只有部分图片（比如搜索了某天的图片），
+    // 直接往末尾加，会导致界面顺序和数据库顺序彻底错乱。
+    addImageToUI(pixmap);
+}
+
+// ==========================================================
+// 2. 在界面上动态生成图片控件 (addImageToUI)
+// ==========================================================
+void HonorWallWidget::addImageToUI(const QPixmap& pixmap)
+{
+    if (pixmap.isNull()) {
+        qWarning() << "图片无效！";
+        return;
+    }
+
+    // ================== 1. 缩放图片 ==================
+    QPixmap scaledPixmap = pixmap.scaled(imgW, imgH, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    // ================== 2. 创建控件 ==================
+    ClickableLabel* imageLabel = new ClickableLabel(contentWidget);
+    if (!imageLabel) {
+        qWarning() << "无法创建 QLabel！";
+        return;
+    }
+
+    // ================== 3. 配置控件属性 ==================
+    imageLabel->setPixmap(scaledPixmap);
+    imageLabel->setAlignment(Qt::AlignCenter);
+    imageLabel->setStyleSheet("border: 1px solid #ccc; padding: 5px;");
+
+    // ⚠️ 逻辑 Bug 2：这里没有给 imageLabel 设置 property("id")！
+    // 导致你在 loadImagesFromDatabase() 里点击图片时，无法获取这个新图片的数据库 ID。
+    // 应该在这里把刚插入数据库的自增 ID 拿过来，设置进去。
+
+    connect(imageLabel, &ClickableLabel::clicked, this, &HonorWallWidget::onImageClicked);
+
+    // ================== 4. 添加到网格布局 ==================
+    // ⚠️ 逻辑 Bug 3（极其容易踩的坑）：
+    // gridLayout->count() 返回的是当前所有“子项”的数量，但有时候占位符也算在内。
+    // 如果此时你刚好清空过布局，或者有其他的控件，这里的计算会完全错位，图片可能重叠在一起。
+    int row = gridLayout->count() / 3;
+    int col = gridLayout->count() % 3;
+    gridLayout->addWidget(imageLabel, row, col);
+}
+
+void HonorWallWidget::onImageClicked()
+{
+
+}
+
 

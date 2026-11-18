@@ -38,6 +38,9 @@ private:
     void modifyImage();
     void deleteImage();
     void loadImagesFromDatabase();
+    void addImageToWall(const QString& imagePath);
+    void addImageToUI(const QPixmap& pixmap);
+    void onImageClicked();
 private:
     void setupUI();
     QPushButton *addButton;
